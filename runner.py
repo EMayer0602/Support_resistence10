@@ -99,12 +99,15 @@ from tickers_config import tickers
 def generate_trades_for_day(date_str):
     trades = []
     portfolio = {s: 0 for s in tickers}
+    any_data_found = False
 
     for symbol, cfg in tickers.items():
         field = cfg.get("trade_on", "Close").capitalize()
         price = get_backtest_price(symbol, date_str, field)
         if price is None:
             continue
+        
+        any_data_found = True
 
         for side in ("BUY", "SHORT", "SELL", "COVER"):
             if not cfg.get(side.lower(), False):
@@ -129,7 +132,7 @@ def generate_trades_for_day(date_str):
             delta = qty if side in ("BUY", "COVER") else -qty
             portfolio[symbol] += delta
 
-    return trades
+    return trades, any_data_found
 
 def main():
     if len(sys.argv) < 2:
@@ -165,42 +168,40 @@ def main():
         return
 
     elif mode == "fullbacktest":
+        # First run the core backtesting (signal analysis, etc.)
         run_full_backtest(ib)
-         for symbol, cfg in tickers.items():
-            fn = f"{symbol}_data.csv"
-            contract = cfg["contract"]  # z. B. Stock(symbol, "SMART", "USD")
-            df = update_historical_data_csv(ib, contract, fn)
-            # Weitere Verarbeitung / Simulationslogik …
-            print("✅ Historische Kursdaten aktualisiert – starte Trade-Generierung.")
-
-            # Trade-Erzeugung für jeden Tag im gewünschten Zeitraum
-            from datetime import datetime
-
-            backtest_trades = {}
-            for date_str in generate_backtest_date_range("2025-07-01", "2025-07-18"):
-                trades = generate_trades_for_day(date_str)
-                backtest_trades[date_str] = trades
+        
+        print("✅ Historische Kursdaten aktualisiert – starte Trade-Generierung.")
+        
+        # Trade-Erzeugung für jeden Tag im gewünschten Zeitraum
+        import json
+        backtest_trades = {}
+        missing_days = 0
+        max_missing_days = 10
+        
+        for date_str in generate_backtest_date_range("2025-07-01", "2025-07-18"):
+            trades, any_data_found = generate_trades_for_day(date_str)
+            backtest_trades[date_str] = trades
+            
+            if not any_data_found:
+                missing_days += 1
+                print(f"📅 {date_str}: Keine Kursdaten für alle Ticker gefunden (Tag {missing_days} ohne Daten)")
+                
+                if missing_days >= max_missing_days:
+                    print(f"\n⚠️ BACKTEST ABGEBROCHEN: {max_missing_days} aufeinanderfolgende Tage ohne Kursdaten für alle Ticker.")
+                    print(f"   Letzter verarbeiteter Tag: {date_str}")
+                    print(f"   Möglicherweise sind die Ticker delisted oder der Datumsbereich liegt außerhalb der verfügbaren Daten.")
+                    print(f"   Bisherige Trades wurden in trades_by_day.json gespeichert.")
+                    break
+            else:
+                missing_days = 0  # Reset counter wenn Daten gefunden wurden
                 print(f"📅 {date_str}: {len(trades)} Trades erzeugt.")
 
-            # Exportiere als JSON
-            import json
-            with open("trades_by_day.json", "w") as f:
-                json.dump(backtest_trades, f, indent=2)
-
-            print("✅ Full-Backtest abgeschlossen und Trades exportiert.")
-
-        print("✅ Full-Backtest abgeschlossen.")
-        import json
-
-        backtest_trades = {}
-
-        for date_str in generate_backtest_date_range():  # z. B. 2025-07-01 bis 2025-07-18
-            trades = generate_trades_for_day(date_str)   # ← deine Strategie
-            backtest_trades[date_str] = trades
-
-        # Datei speichern
+        # Exportiere als JSON
         with open("trades_by_day.json", "w") as f:
             json.dump(backtest_trades, f, indent=2)
+
+        print("✅ Full-Backtest abgeschlossen und Trades exportiert.")
 
     else:
         print(f"⚠️ Unbekannter Modus: {mode}")

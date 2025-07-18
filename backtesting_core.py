@@ -304,6 +304,14 @@ def get_last_price(df: pd.DataFrame, cfg: dict, ticker: str) -> float | None:
 
 
 def run_full_backtest(ib):
+    """
+    Führt die Kern-Backtesting-Logik aus (Signalerzeugung, Optimierung, etc.).
+    
+    HINWEIS: Der Fix für das endlose Schleifen-Problem bei fehlenden Kursdaten 
+    wurde in runner.py in der main date iteration loop implementiert, nicht hier.
+    Diese Funktion behandelt die ticker-basierte Verarbeitung, aber die 
+    tagesweise Iteration erfolgt in runner.py.
+    """
     show_chart = True
 
     for ticker, cfg in tickers.items():
